@@ -8,8 +8,8 @@ use std::rand::{task_rng, Rng};
 use std::num::Int;
 use std::iter::AdditiveIterator;
 
-/// A box that contains one of many values, but collapses into one when opened (read from) for
-/// the first time.
+/// A box that contains many values, but collapses into one when opened (read from) for the first
+/// time.
 ///
 /// Example
 /// =======
