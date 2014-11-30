@@ -1,3 +1,4 @@
+#![feature(default_type_params)]
 #![experimental]
 
 use std::cell::UnsafeCell;
@@ -7,6 +8,9 @@ use std::ptr::read;
 use std::rand::{task_rng, Rng};
 use std::num::Int;
 use std::iter::AdditiveIterator;
+use std::fmt;
+use std::default::Default;
+use std::hash::Hash;
 
 /// A box that contains many values, but collapses into one when opened (read from) for the first
 /// time.
@@ -130,6 +134,57 @@ impl<Cat> DerefMut<Cat> for SchroedingerBox<Cat> {
             &SchroedInner::Collapsed(ref mut v) => unsafe { transmute::<&mut Cat, &mut Cat>(v) },
             _ => unreachable!(),
         }
+    }
+}
+
+impl<Cat> fmt::Show for SchroedingerBox<Cat>
+        where Cat: fmt::Show {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Cat> PartialEq for SchroedingerBox<Cat>
+        where Cat: PartialEq {
+    fn eq(&self, other: &SchroedingerBox<Cat>) -> bool {
+        **self == **other
+    }
+}
+
+impl<Cat> Eq for SchroedingerBox<Cat> where Cat: Eq {}
+
+impl<Cat> PartialOrd for SchroedingerBox<Cat>
+        where Cat: PartialOrd {
+    fn partial_cmp(&self, other: &SchroedingerBox<Cat>) -> Option<Ordering> {
+        (**self).partial_cmp(&**other)
+    }
+}
+
+impl<Cat> Ord for SchroedingerBox<Cat> where Cat: Ord {
+    fn cmp(&self, other: &SchroedingerBox<Cat>) -> Ordering {
+        (**self).cmp(&**other)
+    }
+}
+
+impl<Cat> Default for SchroedingerBox<Cat>
+        where Cat: Default {
+    fn default() -> SchroedingerBox<Cat> {
+        SchroedingerBox::new(vec![Default::default()])
+    }
+}
+
+impl<Cat> Clone for SchroedingerBox<Cat>
+        where Cat: Clone {
+    // FIXME: should this collapse the superposition?
+    fn clone(&self) -> SchroedingerBox<Cat> {
+        SchroedingerBox::new(vec![(**self).clone()])
+    }
+}
+
+impl<Cat, S> Hash<S> for SchroedingerBox<Cat>
+        where Cat: Hash<S> {
+    fn hash(&self, state: &mut S) {
+        (**self).hash(state)
     }
 }
 
