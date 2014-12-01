@@ -1,10 +1,9 @@
-#![feature(default_type_params)]
+#![feature(default_type_params, tuple_indexing)]
 #![experimental]
 
 use std::cell::UnsafeCell;
 use std::kinds::marker::NoSync;
 use std::mem::{replace, transmute};
-use std::ptr::read;
 use std::rand::{task_rng, Rng};
 use std::num::Int;
 use std::iter::AdditiveIterator;
@@ -23,25 +22,14 @@ use std::hash::Hash;
 /// let cat_is_alive = SchroedingerBox::new(vec![true, false]);
 /// // Here the cat is both dead and alive, but when we observe it...
 /// let state = *cat_is_alive;
-/// // ...it collapses into one state.
+/// // ...it collapses into one of the possible states with equal probability.
 /// assert_eq!(state, *cat_is_alive);
 /// ```
 // This should be called `SchrödingerBox`, but until type aliases can have static methods called on
 // them (rust-lang/rust#11047) I’ll take pity on those barbarians who can’t type umlauts easily.
 pub struct SchroedingerBox<Cat> {
-    _inner: UnsafeCell<SchroedInner<Cat>>,
+    _inner: UnsafeCell<Vec<(u64, Cat)>>,
     _nosync: NoSync,
-}
-
-/// The inner contents of a `SchroedingerBox`.
-enum SchroedInner<Cat> {
-    /// This represents a set of states, each with a proability.
-    Superposition(Vec<(u64, Cat)>),
-    /// This represents a single collapsed state.
-    Collapsed(Cat),
-    /// We use this state in `SchroedingerBox::collapse` as a temporary state so we can gain
-    /// ownership of the list of superpositions.
-    Empty,
 }
 
 impl<Cat> SchroedingerBox<Cat> {
@@ -66,7 +54,7 @@ impl<Cat> SchroedingerBox<Cat> {
     // the state collapses only on the first observation.
     pub fn from_probabilities(states: Vec<(u64, Cat)>) -> SchroedingerBox<Cat> {
         SchroedingerBox {
-            _inner: UnsafeCell::new(SchroedInner::Superposition(states)),
+            _inner: UnsafeCell::new(states),
             _nosync: NoSync,
         }
     }
@@ -75,41 +63,32 @@ impl<Cat> SchroedingerBox<Cat> {
     /// bad things to happen.
     unsafe fn collapse(&self) {
         // Using `UnsafeCell` is quite messy, so I hope I’ve got this bit right.
-        let mut borrow = &mut *self._inner.get();
+        let vec = &mut *self._inner.get();
+        if vec.len() == 1 {
+            return
+        }
         let mut idx = {
-            let v = match *borrow.deref_mut() {
-                SchroedInner::Superposition(ref mut v) => {
-                    v
-                },
-                SchroedInner::Collapsed(_) => return,
-                SchroedInner::Empty => unreachable!(),
-            };
-            let len = v.iter().map(|&(f, _)| f).sum();
+            let len = vec.iter().map(|&(f, _)| f).sum();
             task_rng().gen_range(0, len)
-        };
-        let v = replace(&mut *borrow, SchroedInner::Empty);
-        let (_, val) = match v {
-            SchroedInner::Superposition(v) => {
-                // For some reason, we need this here
-                idx += 1;
-                v.into_iter().skip_while(|&(f, _)| {
-                    idx = idx.saturating_sub(f);
-                    idx != 0
-                }).next().unwrap()
-            },
-            _ => unreachable!(),
-        };
-        *borrow = SchroedInner::Collapsed(val);
+        } + 1; // For some reason, we need to add 1 to idx
+
+        let v = replace(vec, vec![]);
+        let (_, val) =
+            v.into_iter().skip_while(|&(f, _)| {
+                idx = idx.saturating_sub(f);
+                idx != 0
+            }).next().unwrap();
+        *vec = vec![(1, val)];
     }
 
     /// Moves the value inside a `SchroedingerBox` out, consuming the box and collapsing any
     /// superposition into a definite state if needed.
     pub fn into_inner(self) -> Cat {
         unsafe { self.collapse(); }
-        match unsafe { read(self._inner.get() as *const _) } {
-            SchroedInner::Collapsed(v) => v,
-            _ => unreachable!(),
-        }
+        let vec = unsafe { &mut *self._inner.get() };
+        let v = replace(&mut *vec, vec![]);
+        debug_assert_eq!(v.len(), 1);
+        v.into_iter().next().unwrap().1
     }
 }
 
@@ -117,10 +96,9 @@ impl<Cat> Deref<Cat> for SchroedingerBox<Cat> {
     /// Obtains a reference to the value inside a `SchroedingerBox`, collapsing any superposition
     /// into a definite state if needed.
     fn deref(&self) -> &Cat {
-        unsafe { self.collapse(); }
-        match unsafe { &*self._inner.get() } {
-            &SchroedInner::Collapsed(ref v) => unsafe { transmute::<&Cat, &Cat>(v) },
-            _ => unreachable!(),
+        unsafe {
+            self.collapse();
+            transmute::<&Cat, &Cat>(&(*self._inner.get())[0].1)
         }
     }
 }
@@ -129,10 +107,9 @@ impl<Cat> DerefMut<Cat> for SchroedingerBox<Cat> {
     /// Obtains a mutable reference to the value inside a `SchroedingerBox`, collapsing any
     /// superposition into a definite state if needed.
     fn deref_mut(&mut self) -> &mut Cat {
-        unsafe { self.collapse(); }
-        match unsafe { &mut *self._inner.get() } {
-            &SchroedInner::Collapsed(ref mut v) => unsafe { transmute::<&mut Cat, &mut Cat>(v) },
-            _ => unreachable!(),
+        unsafe {
+            self.collapse();
+            transmute::<&mut Cat, &mut Cat>(&mut (*self._inner.get())[0].1)
         }
     }
 }
@@ -175,7 +152,9 @@ impl<Cat> Default for SchroedingerBox<Cat>
 
 impl<Cat> Clone for SchroedingerBox<Cat>
         where Cat: Clone {
-    // FIXME: should this collapse the superposition?
+    /// Clones a `SchroedingerBox`.
+    ///
+    /// This collapses any superposition into a single state.
     fn clone(&self) -> SchroedingerBox<Cat> {
         SchroedingerBox::new(vec![(**self).clone()])
     }
@@ -203,7 +182,7 @@ mod tests {
         let val = *foo;
         match val {
             1 | 2 | 3 => {},
-            // There’s a million to one chance, but it might not work!
+            // There’s a million to one chance, but it might not work
             4 => {
                 panic!("an unlikely event occurred; this is probably a bug, \
                         but there’s a chance it isn’t");
@@ -217,9 +196,9 @@ mod tests {
     fn collapsing_state_does_not_change() {
         let foo = SchroedingerBox::new(vec![1i, 2, 3]);
         let val = *foo;
-        assert_eq!(*foo, val);
-        assert_eq!(*foo, val);
-        assert_eq!(*foo, val);
+        for _ in range(0u8, 100) {
+            assert_eq!(*foo, val);
+        }
     }
 
     #[test]

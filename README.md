@@ -11,6 +11,6 @@ Example
 let cat_is_alive = SchroedingerBox::new(vec![true, false]);
 // Here the cat is both dead and alive, but when we observe it...
 let state = *cat_is_alive;
-// ...it collapses into one state.
+// ...it collapses into one of the possible states with equal probability.
 assert_eq!(state, *cat_is_alive);
 ```

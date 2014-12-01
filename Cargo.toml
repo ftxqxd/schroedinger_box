@@ -7,3 +7,4 @@ A Rust container type modeled after Erwin Schrödinger’s famous thought
 experiment.
 """
 license = "MIT"
+repository = "https://github.com/P1start/schroedinger_box"
