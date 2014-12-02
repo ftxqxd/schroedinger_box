@@ -37,6 +37,10 @@ impl<Cat> SchroedingerBox<Cat> {
     ///
     /// When the box is first opened, the contents’ superposition will collapse into one of the
     /// given states with equal probability.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `states.len() == 0`.
     pub fn new(states: Vec<Cat>) -> SchroedingerBox<Cat> {
         SchroedingerBox::from_probabilities(states.into_iter().map(|x| (1, x)).collect())
     }
@@ -49,10 +53,15 @@ impl<Cat> SchroedingerBox<Cat> {
     /// The probablity for a state is represented by a ratio of an integer to the total sum of the
     /// probabilities; e.g., a set of states and probabilities `[(1, true), (5, false)]` would be
     /// `false` five sixths of the time and `true` one sixth of the time.
+    ///
+    /// # Panic
+    ///
+    /// Panics if `states.len() == 0`.
     // Here we *could* choose the `Collapsed` state instantly, avoiding all the trouble with
     // `UnsafeCell` and so on. But that would be boring and against the point, so we make sure that
     // the state collapses only on the first observation.
     pub fn from_probabilities(states: Vec<(u64, Cat)>) -> SchroedingerBox<Cat> {
+        assert!(states.len() > 0);
         SchroedingerBox {
             _inner: UnsafeCell::new(states),
             _nosync: NoSync,
