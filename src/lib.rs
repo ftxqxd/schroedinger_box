@@ -1,4 +1,4 @@
-#![feature(default_type_params, tuple_indexing)]
+#![feature(default_type_params)]
 #![experimental]
 
 use std::cell::UnsafeCell;
