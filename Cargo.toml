@@ -8,3 +8,6 @@ experiment.
 """
 license = "MIT"
 repository = "https://github.com/P1start/schroedinger_box"
+
+[dependencies]
+rand = "*"

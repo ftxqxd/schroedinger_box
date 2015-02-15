@@ -1,15 +1,17 @@
-#![feature(default_type_params)]
-#![experimental]
+#![feature(optin_builtin_traits, core, hash)]
+
+extern crate rand;
 
 use std::cell::UnsafeCell;
-use std::kinds::marker::NoSync;
 use std::mem::{replace, transmute};
-use std::rand::{task_rng, Rng};
+use rand::{thread_rng, Rng};
 use std::num::Int;
 use std::iter::AdditiveIterator;
 use std::fmt;
 use std::default::Default;
-use std::hash::Hash;
+use std::hash::{Hash, Hasher};
+use std::ops::{Deref, DerefMut};
+use std::cmp::Ordering;
 
 /// A box that contains many values, but collapses into one when opened (read from) for the first
 /// time.
@@ -29,8 +31,9 @@ use std::hash::Hash;
 // them (rust-lang/rust#11047) I’ll take pity on those barbarians who can’t type umlauts easily.
 pub struct SchroedingerBox<Cat> {
     _inner: UnsafeCell<Vec<(u64, Cat)>>,
-    _nosync: NoSync,
 }
+
+impl<Cat> !Sync for SchroedingerBox<Cat> {}
 
 impl<Cat> SchroedingerBox<Cat> {
     /// Creates a new `SchroedingerBox` from a set of states.
@@ -64,7 +67,6 @@ impl<Cat> SchroedingerBox<Cat> {
         assert!(states.len() > 0);
         SchroedingerBox {
             _inner: UnsafeCell::new(states),
-            _nosync: NoSync,
         }
     }
 
@@ -78,7 +80,7 @@ impl<Cat> SchroedingerBox<Cat> {
         }
         let mut idx = {
             let len = vec.iter().map(|&(f, _)| f).sum();
-            task_rng().gen_range(0, len)
+            thread_rng().gen_range(0, len)
         } + 1; // For some reason, we need to add 1 to idx
 
         let v = replace(vec, vec![]);
@@ -101,7 +103,9 @@ impl<Cat> SchroedingerBox<Cat> {
     }
 }
 
-impl<Cat> Deref<Cat> for SchroedingerBox<Cat> {
+impl<Cat> Deref for SchroedingerBox<Cat> {
+    type Target = Cat;
+
     /// Obtains a reference to the value inside a `SchroedingerBox`, collapsing any superposition
     /// into a definite state if needed.
     fn deref(&self) -> &Cat {
@@ -112,7 +116,7 @@ impl<Cat> Deref<Cat> for SchroedingerBox<Cat> {
     }
 }
 
-impl<Cat> DerefMut<Cat> for SchroedingerBox<Cat> {
+impl<Cat> DerefMut for SchroedingerBox<Cat> {
     /// Obtains a mutable reference to the value inside a `SchroedingerBox`, collapsing any
     /// superposition into a definite state if needed.
     fn deref_mut(&mut self) -> &mut Cat {
@@ -123,8 +127,15 @@ impl<Cat> DerefMut<Cat> for SchroedingerBox<Cat> {
     }
 }
 
-impl<Cat> fmt::Show for SchroedingerBox<Cat>
-        where Cat: fmt::Show {
+impl<Cat> fmt::Debug for SchroedingerBox<Cat>
+        where Cat: fmt::Debug {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        (**self).fmt(f)
+    }
+}
+
+impl<Cat> fmt::Display for SchroedingerBox<Cat>
+        where Cat: fmt::Display {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         (**self).fmt(f)
     }
@@ -170,7 +181,7 @@ impl<Cat> Clone for SchroedingerBox<Cat>
 }
 
 impl<Cat, S> Hash<S> for SchroedingerBox<Cat>
-        where Cat: Hash<S> {
+        where Cat: Hash<S>, S: Hasher {
     fn hash(&self, state: &mut S) {
         (**self).hash(state)
     }
@@ -187,7 +198,7 @@ mod tests {
 
         // Set up a `SchroedingerBox` with one very unlikely value
         let foo = SchroedingerBox::from_probabilities(
-            vec![(100000, 1i), (500000, 2), (499999, 3), (1, 4)]);
+            vec![(100000, 1), (500000, 2), (500000, 3), (1, 4)]);
         let val = *foo;
         match val {
             1 | 2 | 3 => {},
@@ -203,7 +214,7 @@ mod tests {
 
     #[test]
     fn collapsing_state_does_not_change() {
-        let foo = SchroedingerBox::new(vec![1i, 2, 3]);
+        let foo = SchroedingerBox::new(vec![1, 2, 3]);
         let val = *foo;
         for _ in range(0u8, 100) {
             assert_eq!(*foo, val);
@@ -212,7 +223,7 @@ mod tests {
 
     #[test]
     fn test_into_inner() {
-        let foo = SchroedingerBox::new(vec![1i, 2, 3]);
+        let foo = SchroedingerBox::new(vec![1, 2, 3]);
         let val = *foo;
         let own = foo.into_inner();
         assert_eq!(own, val);
