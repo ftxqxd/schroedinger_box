@@ -1,12 +1,15 @@
-#![feature(optin_builtin_traits, core, hash)]
-
+// Copyright 2016 schroedinger_box developers
+//
+// Licensed under the Apache License, Version 2.0 <LICENSE-APACHE or
+// http://www.apache.org/licenses/LICENSE-2.0> or the MIT license
+// <LICENSE-MIT or http://opensource.org/licenses/MIT>, at your
+// option. This file may not be copied, modified, or distributed
+// except according to those terms.
 extern crate rand;
 
 use std::cell::UnsafeCell;
 use std::mem::{replace, transmute};
 use rand::{thread_rng, Rng};
-use std::num::Int;
-use std::iter::AdditiveIterator;
 use std::fmt;
 use std::default::Default;
 use std::hash::{Hash, Hasher};
@@ -16,8 +19,7 @@ use std::cmp::Ordering;
 /// A box that contains many values, but collapses into one when opened (read from) for the first
 /// time.
 ///
-/// Example
-/// =======
+/// # Example
 ///
 /// ```rust
 /// # use schroedinger_box::SchroedingerBox;
@@ -32,8 +34,6 @@ use std::cmp::Ordering;
 pub struct SchroedingerBox<Cat> {
     _inner: UnsafeCell<Vec<(u64, Cat)>>,
 }
-
-impl<Cat> !Sync for SchroedingerBox<Cat> {}
 
 impl<Cat> SchroedingerBox<Cat> {
     /// Creates a new `SchroedingerBox` from a set of states.
@@ -79,7 +79,7 @@ impl<Cat> SchroedingerBox<Cat> {
             return
         }
         let mut idx = {
-            let len = vec.iter().map(|&(f, _)| f).sum();
+            let len = vec.iter().map(|&(f, _)| f).fold(0, |a, b| a + b);
             thread_rng().gen_range(0, len)
         } + 1; // For some reason, we need to add 1 to idx
 
@@ -180,10 +180,10 @@ impl<Cat> Clone for SchroedingerBox<Cat>
     }
 }
 
-impl<Cat, S> Hash<S> for SchroedingerBox<Cat>
-        where Cat: Hash<S>, S: Hasher {
-    fn hash(&self, state: &mut S) {
-        (**self).hash(state)
+impl<Cat> Hash for SchroedingerBox<Cat>
+        where Cat: Hash {
+    fn hash<H>(&self, hasher: &mut H) where H: Hasher {
+        (**self).hash(hasher)
     }
 }
 
@@ -216,7 +216,7 @@ mod tests {
     fn collapsing_state_does_not_change() {
         let foo = SchroedingerBox::new(vec![1, 2, 3]);
         let val = *foo;
-        for _ in range(0u8, 100) {
+        for _ in 0u8..100 {
             assert_eq!(*foo, val);
         }
     }
