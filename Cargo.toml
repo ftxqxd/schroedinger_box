@@ -6,7 +6,7 @@ description = """
 A Rust container type modeled after Erwin Schrödinger’s famous thought
 experiment.
 """
-license = "MIT/Apache-2.0"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/P1start/schroedinger_box"
 
 [dependencies]
